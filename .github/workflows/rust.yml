@@ -1,6 +1,10 @@
 name: Rust
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
@@ -62,7 +66,7 @@ jobs:
       asset_name: boon-linux-amd64
     strategy:
       matrix:
-        love: [11.2, 11.3, 0.10.2]
+        love: [11.2, 11.3, 11.4, 11.5, 0.10.2]
     steps:
       - uses: actions/checkout@v2
       - name: Download latest boon
@@ -97,7 +101,7 @@ jobs:
       asset_name: boon-macos-amd64
     strategy:
       matrix:
-        love: [11.2, 11.3, 0.10.2]
+        love: [11.2, 11.3, 11.4, 11.5, 0.10.2]
     steps:
       - uses: actions/checkout@v2
       - name: Download latest boon
@@ -130,7 +134,7 @@ jobs:
       asset_name: boon-windows-amd64
     strategy:
       matrix:
-        love: [11.2, 11.3, 0.10.2]
+        love: [11.2, 11.3, 11.4, 11.5, 0.10.2]
     steps:
       - uses: actions/checkout@v2
       - name: Download latest boon

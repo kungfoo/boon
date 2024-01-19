@@ -42,15 +42,18 @@ pub enum Bitness {
     X64, // 64 bit
 }
 
-const LOVE_VERSIONS: [&str; 5] = ["11.3", "11.2", "11.1", "11.0", "0.10.2"];
+pub static LOVE_VERSIONS: &[&str] = &["11.5", "11.4", "11.3", "11.2", "11.1", "11.0", "0.10.2"];
+
 /// Represents a specific version of LÖVE2D
 #[derive(Copy, Clone, Debug, Primitive)]
 pub enum LoveVersion {
-    V11_3 = 0,
-    V11_2 = 1,
-    V11_1 = 2,
-    V11_0 = 3,
-    V0_10_2 = 4,
+    V11_5 = 0,
+    V11_4 = 1,
+    V11_3 = 2,
+    V11_2 = 3,
+    V11_1 = 4,
+    V11_0 = 5,
+    V0_10_2 = 6,
 }
 
 /// File info about remote download
@@ -79,15 +82,8 @@ impl FromStr for LoveVersion {
             .iter()
             .enumerate()
             .find(|(_, v)| s == **v)
-            .map(|(i, _)| Self::from_usize(i))
-            .flatten()
-            .ok_or(format!("{} is not a valid love version.", s))
-    }
-}
-
-impl LoveVersion {
-    pub const fn variants() -> [&'static str; 5] {
-        LOVE_VERSIONS
+            .and_then(|(i, _)| Self::from_usize(i))
+            .ok_or(format!("{s} is not a valid love version."))
     }
 }
 
@@ -105,7 +101,7 @@ impl Display for Bitness {
             X86 => "x86",
             X64 => "x64",
         };
-        write!(f, "{}", str)
+        write!(f, "{str}")
     }
 }
 
@@ -117,7 +113,7 @@ impl Display for Platform {
             Windows => "Windows",
             MacOs => "macOS",
         };
-        write!(f, "{}", str)
+        write!(f, "{str}")
     }
 }
 
@@ -136,7 +132,7 @@ impl Display for BuildSettings {
 }
 
 arg_enum! {
-    #[derive(Debug, Copy, Clone, PartialEq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
     #[allow(non_camel_case_types)]
     pub enum Target {
         love,

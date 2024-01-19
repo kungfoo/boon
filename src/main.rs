@@ -1,9 +1,4 @@
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    clippy::cargo
-)]
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(
     clippy::non_ascii_literal,
     clippy::missing_docs_in_private_items,
@@ -13,16 +8,18 @@
     clippy::expect_used
 )]
 mod types;
-use crate::types::{Bitness, BuildSettings, BuildStatistics, LoveVersion, Platform, Project, Target};
+use crate::build::get_boon_data_path;
+use crate::types::{
+    Bitness, BuildSettings, BuildStatistics, LoveVersion, Platform, Project, Target, LOVE_VERSIONS,
+};
 
 mod build;
 mod download;
 
 use anyhow::{bail, Context, Result};
-use app_dirs::{AppDataType, AppInfo, app_dir};
 use config::Config;
 use humansize::{file_size_opts, FileSize};
-use prettytable::{cell, row, Table};
+use prettytable::{row, Table};
 use remove_dir_all::remove_dir_all;
 use std::collections::HashSet;
 use std::fs::File;
@@ -51,8 +48,8 @@ enum BoonOpt {
             long,
             short,
             help = "Specify which target version of LÖVE to build for",
-            possible_values=&LoveVersion::variants(),
-            default_value="11.3",
+            possible_values=LOVE_VERSIONS,
+            default_value="11.5",
         )]
         version: LoveVersion,
         directory: String,
@@ -69,22 +66,17 @@ enum BoonOpt {
 enum LoveSubcommand {
     #[structopt(about = "Download a version of LÖVE")]
     Download {
-        #[structopt(possible_values=&LoveVersion::variants())]
+        #[structopt(possible_values=LOVE_VERSIONS)]
         version: LoveVersion,
     },
     #[structopt(about = "Remove a version of LÖVE")]
     Remove {
-        #[structopt(possible_values=&LoveVersion::variants())]
+        #[structopt(possible_values=LOVE_VERSIONS)]
         version: LoveVersion,
     },
     #[structopt(about = "List installed LÖVE versions")]
     List,
 }
-
-const APP_INFO: AppInfo = AppInfo {
-    name: "boon",
-    author: "boon",
-};
 
 const BOON_CONFIG_FILE_NAME: &str = "Boon.toml";
 const DEFAULT_CONFIG: &str = include_str!(concat!("../", "Boon.toml"));
@@ -116,9 +108,13 @@ fn main() -> Result<()> {
                     let installed_versions = get_installed_love_versions()
                         .context("Could not get installed LÖVE versions")?;
 
-                    println!("Installed versions:");
-                    for version in installed_versions {
-                        println!("* {}", version);
+                    if installed_versions.is_empty() {
+                        println!("No LÖVE versions installed.");
+                    } else {
+                        println!("Installed versions:");
+                        for version in installed_versions {
+                            println!("* {version}");
+                        }
                     }
                 }
             }
@@ -135,8 +131,7 @@ fn get_settings() -> Result<(Config, BuildSettings)> {
     let mut settings = config::Config::new();
     let default_config = config::File::from_str(DEFAULT_CONFIG, config::FileFormat::Toml);
     settings.merge(default_config).context(format!(
-        "Could not set default configuration `{}`",
-        BOON_CONFIG_FILE_NAME
+        "Could not set default configuration `{BOON_CONFIG_FILE_NAME}`"
     ))?;
 
     let mut ignore_list: HashSet<String> = settings.get("build.ignore_list").unwrap();
@@ -145,8 +140,7 @@ fn get_settings() -> Result<(Config, BuildSettings)> {
         settings
             .merge(config::File::with_name(BOON_CONFIG_FILE_NAME))
             .context(format!(
-                "Error while reading config file `{}`.",
-                BOON_CONFIG_FILE_NAME
+                "Error while reading config file `{BOON_CONFIG_FILE_NAME}`."
             ))?;
 
         let project_ignore_list: HashSet<String> = settings.get("build.ignore_list").unwrap();
@@ -161,15 +155,13 @@ fn get_settings() -> Result<(Config, BuildSettings)> {
     let hash_targets: HashSet<String> = settings.get("build.targets").unwrap();
     let mut targets: Vec<Target> = Vec::new();
     for target in &hash_targets {
-        targets.push(
-            match target.as_str() {
-                "love" => Target::love,
-                "windows" => Target::windows,
-                "macos" => Target::macos,
-                "all" => Target::all,
-                _ => bail!("{} is not a valid build target.", target),
-            }
-        );
+        targets.push(match target.as_str() {
+            "love" => Target::love,
+            "windows" => Target::windows,
+            "macos" => Target::macos,
+            "all" => Target::all,
+            _ => bail!("{} is not a valid build target.", target),
+        });
     }
 
     let build_settings = BuildSettings {
@@ -220,8 +212,7 @@ fn love_remove(version: LoveVersion) -> Result<()> {
         get_installed_love_versions().context("Could not get installed LÖVE versions")?;
 
     if installed_versions.contains(&version) {
-        let output_file_path = app_dir(AppDataType::UserData, &APP_INFO, "/")
-            .context("Could not get app user data path")?;
+        let output_file_path = get_boon_data_path()?;
         let path = PathBuf::new().join(output_file_path).join(&version);
         remove_dir_all(&path).with_context(|| {
             format!(
@@ -230,9 +221,9 @@ fn love_remove(version: LoveVersion) -> Result<()> {
                 path.display()
             )
         })?;
-        println!("Removed LÖVE version {}.", version);
+        println!("Removed LÖVE version {version}.");
     } else {
-        println!("LÖVE version '{}' is not installed.", version);
+        println!("LÖVE version '{version}' is not installed.");
     }
 
     Ok(())
@@ -241,22 +232,15 @@ fn love_remove(version: LoveVersion) -> Result<()> {
 /// `boon love download` subcommand
 fn love_download(version: LoveVersion) -> Result<()> {
     download::download_love(version, Platform::Windows, Bitness::X86).context(format!(
-        "Could not download LÖVE {} for Windows (32-bit)",
-        version.to_string()
+        "Could not download LÖVE {version} for Windows (32-bit)"
     ))?;
     download::download_love(version, Platform::Windows, Bitness::X64).context(format!(
-        "Could not download LÖVE {} for Windows (64-bit)",
-        version.to_string()
+        "Could not download LÖVE {version} for Windows (64-bit)"
     ))?;
-    download::download_love(version, Platform::MacOs, Bitness::X64).context(format!(
-        "Could not download LÖVE {} for macOS",
-        version.to_string()
-    ))?;
+    download::download_love(version, Platform::MacOs, Bitness::X64)
+        .context(format!("Could not download LÖVE {version} for macOS"))?;
 
-    println!(
-        "\nLÖVE {} is now available for building.",
-        version.to_string()
-    );
+    println!("\nLÖVE {version} is now available for building.");
 
     Ok(())
 }
@@ -267,12 +251,10 @@ fn init() -> Result<()> {
         println!("Project already initialized.");
     } else {
         File::create(BOON_CONFIG_FILE_NAME).context(format!(
-            "Failed to create config file `{}`.",
-            BOON_CONFIG_FILE_NAME
+            "Failed to create config file `{BOON_CONFIG_FILE_NAME}`."
         ))?;
         std::fs::write(BOON_CONFIG_FILE_NAME, DEFAULT_CONFIG).context(format!(
-            "Failed to write default configuration to `{}`.",
-            BOON_CONFIG_FILE_NAME
+            "Failed to write default configuration to `{BOON_CONFIG_FILE_NAME}`."
         ))?;
     }
 
@@ -294,12 +276,9 @@ fn build(
     }
 
     if targets.contains(&Target::all) {
-        println!("Building all targets from directory `{}`", directory);
+        println!("Building all targets from directory `{directory}`");
     } else {
-        println!(
-            "Building targets `{:?}` from directory `{}`",
-            targets, directory
-        );
+        println!("Building targets `{targets:?}` from directory `{directory}`");
     }
 
     let project = Project {
@@ -331,10 +310,7 @@ fn build(
     };
 
     build::init(&project, build_settings).with_context(|| {
-        format!(
-            "Failed to initialize the build process using build settings: {}",
-            build_settings
-        )
+        format!("Failed to initialize the build process using build settings: {build_settings}")
     })?;
 
     let mut stats_list = Vec::new();
@@ -424,8 +400,7 @@ fn display_build_report(build_stats: Vec<BuildStatistics>) {
 
 fn get_installed_love_versions() -> Result<Vec<String>> {
     let mut installed_versions: Vec<String> = Vec::new();
-    let output_file_path =
-        app_dir(AppDataType::UserData, &APP_INFO, "/").expect("Could not get app directory path");
+    let output_file_path = get_boon_data_path()?;
     let walker = WalkDir::new(output_file_path).max_depth(1).into_iter();
     for entry in walker {
         let entry = entry.expect("Could not get DirEntry");
@@ -433,7 +408,7 @@ fn get_installed_love_versions() -> Result<Vec<String>> {
             let file_name = entry
                 .file_name()
                 .to_str()
-                .with_context(|| format!("Could not parse file name `{:?}` to str", entry))?;
+                .with_context(|| format!("Could not parse file name `{entry:?}` to str"))?;
 
             // Exclude directories that do not parse to a love
             // version, just in case some bogus directories

@@ -1,23 +1,17 @@
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    clippy::cargo
-)]
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(
     clippy::non_ascii_literal,
     clippy::missing_docs_in_private_items,
     clippy::implicit_return,
     clippy::print_stdout,
-    clippy::expect_used,
+    clippy::expect_used
 )]
 pub mod macos;
 pub mod windows;
 
 use crate::types::{Bitness, BuildSettings, BuildStatistics, LoveVersion, Platform, Project};
 
-use crate::APP_INFO;
-use app_dirs::{AppDataType, get_app_dir};
+use directories::ProjectDirs;
 
 use std::io::prelude::*;
 use std::io::{Seek, Write};
@@ -38,6 +32,12 @@ pub fn get_love_version_file_name(
     bitness: Bitness,
 ) -> String {
     match (version, platform, bitness) {
+        (LoveVersion::V11_5, Platform::Windows, Bitness::X64) => "love-11.5-win64",
+        (LoveVersion::V11_5, Platform::Windows, Bitness::X86) => "love-11.5-win32",
+
+        (LoveVersion::V11_4, Platform::Windows, Bitness::X64) => "love-11.4-win64",
+        (LoveVersion::V11_4, Platform::Windows, Bitness::X86) => "love-11.4-win32",
+
         (LoveVersion::V11_3, Platform::Windows, Bitness::X64) => "love-11.3-win64",
         (LoveVersion::V11_3, Platform::Windows, Bitness::X86) => "love-11.3-win32",
 
@@ -80,6 +80,13 @@ pub fn get_zip_output_filename(project: &Project, platform: Platform, bitness: B
     }
 }
 
+pub fn get_boon_data_path() -> Result<PathBuf> {
+    ProjectDirs::from("", "", "boon").map_or_else(
+        || Err(anyhow::anyhow!("Could not get app data directory")),
+        |project_dirs| Ok(project_dirs.data_local_dir().to_path_buf()),
+    )
+}
+
 /// Get a platform-specific path to the app cache directory where LÖVE is stored.
 pub fn get_love_version_path(
     version: LoveVersion,
@@ -87,12 +94,9 @@ pub fn get_love_version_path(
     bitness: Bitness,
 ) -> Result<PathBuf> {
     let filename = get_love_version_file_name(version, platform, bitness);
-
-    // @DoNotFix: The forward slash here is intentional. It will get escaped by
-    // get_app_dir automatically to match the OS preference.
-    let subdirectory = format!("{}/{}", version.to_string(), &filename);
-    Ok(get_app_dir(AppDataType::UserData, &APP_INFO, &subdirectory)
-        .context("Could not get app directory")?)
+    let boon_path = get_boon_data_path()
+        .with_context(|| format!("Could not get version directory for LÖVE version {version}"))?;
+    Ok(boon_path.join(version.to_string()).join(filename))
 }
 
 pub fn scan_files(project: &Project) -> Result<()> {
@@ -146,19 +150,13 @@ pub fn create_love(project: &Project, build_settings: &BuildSettings) -> Result<
     let dst_file = love_path
         .to_str()
         .context("Could not do string conversion")?;
-    println!("Outputting LÖVE as {}", dst_file);
+    println!("Outputting LÖVE as {dst_file}");
 
-    collect_zip_directory(src_dir, dst_file, method, &build_settings.ignore_list).with_context(
-        || {
-            format!(
-                "Error while zipping files from `{}` to `{}`",
-                src_dir, dst_file
-            )
-        },
-    )??;
+    collect_zip_directory(src_dir, dst_file, method, &build_settings.ignore_list)
+        .with_context(|| format!("Error while zipping files from `{src_dir}` to `{dst_file}`"))??;
 
     let build_metadata = std::fs::metadata(dst_file)
-        .with_context(|| format!("Failed to read file metadata for '{}'", dst_file))?;
+        .with_context(|| format!("Failed to read file metadata for '{dst_file}'"))?;
 
     Ok(BuildStatistics {
         name: String::from("LÖVE"),
@@ -209,11 +207,14 @@ where
                 ignore_list,
             )
         {
-            zip.start_file(name.to_str().expect("Could not do string conversion"), options)?;
+            zip.start_file(
+                name.to_str().expect("Could not do string conversion"),
+                options,
+            )?;
             let mut f = File::open(path)?;
 
             f.read_to_end(&mut buffer)?;
-            zip.write_all(&*buffer)?;
+            zip.write_all(&buffer)?;
             buffer.clear();
         }
     }
@@ -232,7 +233,7 @@ fn collect_zip_directory(
     }
 
     let path = Path::new(dst_file);
-    let file = File::create(&path)
+    let file = File::create(path)
         .with_context(|| format!("Could not create file path: '{}'", path.display()))?;
 
     let walkdir = WalkDir::new(src_dir);
