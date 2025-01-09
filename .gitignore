@@ -6,3 +6,4 @@ love/*
 *.app
 *.zip
 .idea
+.DS_Store
